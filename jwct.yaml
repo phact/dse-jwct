@@ -1,0 +1,77 @@
+# ./ebdse run type=cql yaml=jwct tags=phase:schema threads=1 cycles=1 -vvv
+tags:
+ phase: schema
+statements:
+ - name: create-keyspace
+   prepared: false
+   statement: |
+     CREATE KEYSPACE if not exists jwct WITH replication = {'class': 'SimpleStrategy', 'replication_factor': '1'}  AND durable_writes = true;
+---
+tags:
+ phase: schema
+statements:
+- name: create-table
+  prepared: false
+  statement: |
+    CREATE TABLE jwct.meta (
+        data_key text,
+        data_source text,
+        key_id int,
+        meta_data text,
+        target_table int,
+        type int,
+        PRIMARY KEY (data_key, data_source)
+    ) WITH CLUSTERING ORDER BY (data_source ASC);
+
+    CREATE TABLE jwct.events (
+        key_id int,
+        time_part bigint,
+        time bigint,
+        seq_num bigint,
+        recieve_time bigint,
+        update_time bigint,
+        value text,
+        PRIMARY KEY ((key_id, time_part), time, seq_num)
+    ) WITH CLUSTERING ORDER BY (time DESC, seq_num ASC);
+---
+# ./ebdse run type=cql yaml=jwct tags=phase:main-events -vvv
+tags:
+ phase: main-events
+ type: events
+statements:
+- name: events
+  params:
+    ratio: 1
+  prepared: false
+  statement: |
+    insert INTO jwct.events (key_id , time_part , time , seq_num , recieve_time , update_time , value ) VALUES (  ?key_id, ?time_part, ?time, ?seq_num, ?recieve_time, ?update_time, ?value);
+  bindings:
+    key_id: compose uniform_integer(1,1000) -> int
+    #key_id: uniform_integer(1, 50000)
+    #time_part: ToLong
+    time: ToLong
+    time_part: compose Div(10) ; Add(201601010000) -> long
+    #compose Combinations(2;0;0-1;0-7;0-2;0-9;0;0-9;0-1;0-9;0-6;0-9); ToLong() -> long
+    seq_num: ToLong
+    recieve_time: ToLong
+    update_time: ToLong
+    value: compose pareto(1.2,10); ToString() -> String
+---
+# ./ebdse run type=cql yaml=jwct tags=phase:main-meta -vvv
+tags:
+ phase: main-meta
+ type: meta
+statements:
+- name: meta
+  params:
+    ratio: 1
+  prepared: false
+  statement: |
+    insert into jwct.meta (data_key , data_source , key_id , meta_data , target_table , type ) VALUES ( ?data_key, ?data_source, ?key_id, ?meta_data, ?target_table, ?type );
+  bindings:
+    key_id: compose ToInt -> int
+    data_key: ToString
+    data_source: ToString
+    meta_data: ToString
+    target_table: ToInt 
+    type: ToInt 
